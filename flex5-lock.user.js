@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flex5 - The Gated Hash (v7.10)
 // @namespace    http://tampermonkey.net/
-// @version      7.10
+// @version      7.11
 // @description  Hashed manager gate with pre-execution checks and strict Auto-Sub logic blocking.
 // @author       Ethan Bell / AI Collaborator
 // @match        *://streamlineprod.flexrentalsolutions.com/*
