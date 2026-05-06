@@ -2,7 +2,7 @@
 // @name         Flex5 Scan Assistant (1.0.0)
 // @namespace    http://tampermonkey.net/
 // @version      1.0.0
-// @description  Hashed manager gate with pre-execution checks and strict Auto-Sub logic blocking.
+// @description  Enhances Flex5 scanning with strict Line Lock and seamless Auto-Sub capabilities. Features UI highlighting, focus trapping, and role-based manager access.
 // @author       Ethan Bell / AI Collaborator
 // @match        *://streamlineprod.flexrentalsolutions.com/*
 // @updateURL    https://raw.githubusercontent.com/SPInventory/flex5-warehouse-tools/refs/heads/main/flex5-lock.user.js
