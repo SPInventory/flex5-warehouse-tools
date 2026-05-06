@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Flex5 Scan Assistant (1.0.6)
+// @name         Flex5 Scan Assistant (1.0.8)
 // @namespace    http://tampermonkey.net/
-// @version      1.0.6
+// @version      1.0.8
 // @description  Enhances Flex5 scanning with strict Line Lock and seamless Auto-Sub capabilities. Features UI highlighting, focus trapping, and role-based manager access.
 // @author       Ethan Bell
 // @match        *://streamlineprod.flexrentalsolutions.com/*
@@ -34,12 +34,12 @@
         mode: 'OFF',
         type: null,
         lockedLineId: null,
-        lastInterceptedId: null, // Critical for robust locking
+        lastInterceptedId: null,
         wantsArming: false,
         isAuthorizedManager: false
     };
 
-    // --- 1. CSS (STRICT CSS TOGGLE) ---
+    // --- 1. CSS ---
     const style = document.createElement('style');
     style.innerHTML = `
         .flex-locked-row-pink, .flex-locked-row-pink .x-grid-cell {
@@ -56,29 +56,14 @@
             text-align: center !important;
             border: 1px solid rgb(229, 57, 53) !important;
             cursor: pointer !important;
-            pointer-events: auto !important;
         }
         .flex-search-locked ~ .x-form-trigger-wrap {
             display: none !important;
         }
-        .flex-search-locked::-webkit-search-cancel-button {
-            -webkit-appearance: none;
-        }
     `;
     document.head.appendChild(style);
 
-    // --- 2. GLOBAL EVENT DELEGATION (CLEAN UNLOCK) ---
-    window.addEventListener('mousedown', function(e) {
-        if (flexState.mode === 'LOCKED') {
-            if (e.target.classList.contains('flex-search-locked')) {
-                e.preventDefault();
-                e.stopPropagation();
-                cancelLock();
-            }
-        }
-    }, true);
-
-    // --- 3. BOOT ---
+    // --- 2. BOOT ---
     let initTimer = setInterval(() => {
         verifyManagerStatus();
         if (typeof Ext !== 'undefined' && Ext.ClassManager && Ext.ClassManager.get('ExtFlex.warehouse.equipmentlist.EquipmentListScanVC')) {
@@ -117,7 +102,7 @@
         return null;
     }
 
-    // --- 4. UI WATCHDOG ---
+    // --- 3. UI WATCHDOG ---
     function startGlobalWatchdog() {
         setInterval(() => {
             const inputEl = getActiveSearchBar();
@@ -130,26 +115,36 @@
 
                 if (inputEl) {
                     inputEl.readOnly = true;
+                    inputEl.value = flexState.type === 'LINE_LOCK' ? "LINE LOCK ACTIVE" : "AUTO-SUB ACTIVE";
+
                     if (!inputEl.classList.contains('flex-search-locked')) {
                         inputEl.classList.add('flex-search-locked');
                     }
-                    inputEl.value = flexState.type === 'LINE_LOCK' ? "LINE LOCK ACTIVE" : "AUTO-SUB ACTIVE";
+
+                    if (!inputEl.hasAttribute('data-flex-hooked')) {
+                        inputEl.setAttribute('data-flex-hooked', 'true');
+                        inputEl.addEventListener('click', function(e) {
+                            if (flexState.mode === 'LOCKED') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                cancelLock();
+                            }
+                        });
+                    }
                 }
 
                 if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
                     document.activeElement.blur();
                 }
             } else {
-                // AGGRESSIVE CLEANUP
                 if (inputEl && inputEl.classList.contains('flex-search-locked')) {
                     inputEl.readOnly = false;
                     inputEl.classList.remove('flex-search-locked');
+                    inputEl.removeAttribute('data-flex-hooked');
                     inputEl.value = "";
+                    inputEl.placeholder = "Search...";
                 }
-                const lockedRows = document.querySelectorAll('.flex-locked-row-pink');
-                if (lockedRows.length > 0) {
-                    lockedRows.forEach(r => r.classList.remove('flex-locked-row-pink'));
-                }
+                document.querySelectorAll('.flex-locked-row-pink').forEach(r => r.classList.remove('flex-locked-row-pink'));
             }
         }, 200);
     }
@@ -160,6 +155,12 @@
         flexState.lockedLineId = null;
         flexState.wantsArming = false;
 
+        const inputEl = getActiveSearchBar();
+        if (inputEl) {
+            inputEl.classList.remove('flex-search-locked');
+            inputEl.value = "";
+        }
+
         try {
             const nativeCancel = document.querySelector('.x-btn-icon-el-default-toolbar-small.fa-ban');
             if (nativeCancel) {
@@ -168,7 +169,7 @@
         } catch (err) {}
     }
 
-    // --- 5. CORE LOGIC (RESTORED LOCK TRACKING) ---
+    // --- 4. CORE LOGIC ---
     function hijackMenu() {
         const origAdd = Ext.menu.Menu.prototype.add;
         Ext.menu.Menu.prototype.add = function() {
@@ -176,17 +177,20 @@
             try {
                 const subBtn = this.down('menuitem[text*="Substitute Line"]');
                 if (!subBtn || this.down('[itemId=lineLockBtn]')) return addedItems;
+
+                // Get the ID immediately from the record attached to the menu
                 const record = this.config?.record || this.rec;
+                const recordId = record ? (record.get('id') || record.id) : null;
 
                 this.insert(this.items.indexOf(subBtn) + 1, Ext.create('Ext.menu.Item', {
                     itemId: 'lineLockBtn', text: 'Line Lock', iconCls: 'x-fa fa-lock',
-                    handler: function() { arm('LINE_LOCK', record, subBtn); }
+                    handler: function() { arm('LINE_LOCK', recordId, subBtn); }
                 }));
 
                 if (flexState.isAuthorizedManager) {
                     this.insert(this.items.indexOf(subBtn) + 2, Ext.create('Ext.menu.Item', {
                         itemId: 'autoSubLockBtn', text: 'Auto-Sub', iconCls: 'x-fa fa-retweet',
-                        handler: function() { arm('AUTO_SUB', record, subBtn); }
+                        handler: function() { arm('AUTO_SUB', recordId, subBtn); }
                     }));
                 }
             } catch (err) {}
@@ -194,12 +198,10 @@
         };
     }
 
-    function arm(type, record, subBtn) {
-        if (type === 'AUTO_SUB' && !flexState.isAuthorizedManager) return;
-
+    function arm(type, recordId, subBtn) {
+        // Use intercepted ID if available for precision, otherwise fallback to menu record ID
         flexState.type = type;
-        // Use the intercepted ID if available, otherwise fallback to the record ID
-        flexState.lockedLineId = flexState.lastInterceptedId || (record ? record.get('id') : null);
+        flexState.lockedLineId = flexState.lastInterceptedId || recordId;
 
         if (type === 'AUTO_SUB') {
             flexState.wantsArming = true;
@@ -212,23 +214,28 @@
     function hookExtAjax() {
         const originalRequest = Ext.Ajax.request;
         Ext.Ajax.request = function(options) {
-            // RESTORED: Capture the exact Line ID when the gear menu is opened
+            // Sniff the line ID when gear menu opens
             if (options.url?.includes('/additional-action-info')) {
                 const match = options.url.match(/\/line-item\/([a-f0-9-]+)\/additional-action-info/);
                 if (match && match[1]) flexState.lastInterceptedId = match[1];
             }
 
+            // Intercept Scans
             if (options.url?.includes('/api/warehouse/scan') && options.jsonData) {
                 const data = options.jsonData;
+
                 if (flexState.mode === 'LOCKED' || flexState.wantsArming) {
-                    if (flexState.type === 'AUTO_SUB') {
-                        if (!flexState.isAuthorizedManager) return originalRequest.apply(this, arguments);
-                        data.scanLineItemId = "";
+                    if (flexState.type === 'AUTO_SUB' && flexState.isAuthorizedManager) {
+                        // Silent Sub Rewrite
+                        data.scanLineItemId = null; // Forces server to ignore current selection
                         data.substituteLineId = flexState.lockedLineId;
-                        if (flexState.wantsArming) { flexState.mode = 'LOCKED'; flexState.wantsArming = false; }
+
+                        if (flexState.wantsArming) {
+                            flexState.mode = 'LOCKED';
+                            flexState.wantsArming = false;
+                        }
                     }
                     else if (flexState.type === 'LINE_LOCK') {
-                        // FORCE LOCK TO LINE
                         data.scanLineItemId = flexState.lockedLineId;
                         delete data.substituteLineId;
                     }
@@ -243,6 +250,7 @@
         if (MainVC?.prototype.activateLineItemSubstitution) {
             const innerOrig = MainVC.prototype.activateLineItemSubstitution;
             MainVC.prototype.activateLineItemSubstitution = function() {
+                // Hard block spoofed auto-subs
                 if (flexState.wantsArming && flexState.type === 'AUTO_SUB' && !flexState.isAuthorizedManager) return;
                 return innerOrig.apply(this, arguments);
             };
