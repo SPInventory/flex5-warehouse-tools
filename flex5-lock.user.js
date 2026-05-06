@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Flex5 Scan Assistant (1.0.1)
+// @name         Flex5 Scan Assistant (1.0.2)
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
+// @version      1.0.2
 // @description  Enhances Flex5 scanning with strict Line Lock and seamless Auto-Sub capabilities. Features UI highlighting, focus trapping, and role-based manager access.
-// @author       Ethan Bell / AI Collaborator
+// @author       Ethan Bell
 // @match        *://streamlineprod.flexrentalsolutions.com/*
 // @updateURL    https://raw.githubusercontent.com/SPInventory/flex5-warehouse-tools/refs/heads/main/flex5-lock.user.js
 // @downloadURL  https://raw.githubusercontent.com/SPInventory/flex5-warehouse-tools/refs/heads/main/flex5-lock.user.js
@@ -41,10 +41,10 @@
         targetBarcode: null,
         wantsArming: false,
         lastInterceptedId: null,
-        isAuthorizedManager: false // Cached global permission
+        isAuthorizedManager: false
     };
 
-    // --- 1. CSS FOR FEEDBACK ---
+    // --- 1. CSS FOR FEEDBACK & CLEAN UI ---
     const style = document.createElement('style');
     style.innerHTML = `
         .flex-locked-row-pink, .flex-locked-row-pink .x-grid-cell { 
@@ -54,13 +54,20 @@
             color: rgb(229, 57, 53) !important; 
             font-weight: bold !important;
         }
+        /* Hide the Clear "X" and magnifying glass when locked */
+        .flex-search-locked ~ .x-form-trigger-wrap {
+            display: none !important;
+        }
+        /* Prevent browser-native search clear buttons */
+        .flex-search-locked::-webkit-search-cancel-button {
+            -webkit-appearance: none;
+        }
     `;
     document.head.appendChild(style);
 
-    // --- 2. BOOT SEQUENCE & SECURITY CHECK ---
+    // --- 2. BOOT SEQUENCE ---
     let initTimer = setInterval(() => {
         verifyManagerStatus();
-
         if (typeof Ext !== 'undefined' && Ext.ClassManager && Ext.ClassManager.get('ExtFlex.warehouse.equipmentlist.EquipmentListScanVC')) {
             clearInterval(initTimer);
             hijackMenu();
@@ -72,13 +79,11 @@
 
     function verifyManagerStatus() {
         if (flexState.isAuthorizedManager) return;
-
         try {
             const allTextElements = document.querySelectorAll('.x-btn-inner, .x-component');
             for (let el of allTextElements) {
                 const rawName = el.innerText.trim();
                 if (!rawName) continue;
-                
                 const encodedName = btoa(unescape(encodeURIComponent(rawName + SECRET_SALT)));
                 if (AUTHORIZED_HASHES.includes(encodedName)) {
                     flexState.isAuthorizedManager = true;
@@ -115,8 +120,9 @@
                     window.focus();
                 }
 
-                if (inputEl && inputEl.readOnly !== true) {
+                if (inputEl && !inputEl.classList.contains('flex-search-locked')) {
                     inputEl.readOnly = true;
+                    inputEl.classList.add('flex-search-locked'); // Triggers CSS to hide the "X"
                     inputEl.value = flexState.type === 'LINE_LOCK' ? "LINE LOCK ACTIVE" : "AUTO-SUB ACTIVE";
                     
                     inputEl.style.setProperty('background-color', 'rgb(250, 224, 223)', 'important');
@@ -131,8 +137,9 @@
                         cancelLock();
                     };
                 }
-            } else if (inputEl && inputEl.readOnly) {
+            } else if (inputEl && inputEl.classList.contains('flex-search-locked')) {
                 inputEl.readOnly = false;
+                inputEl.classList.remove('flex-search-locked');
                 inputEl.value = "";
                 inputEl.style.removeProperty('background-color');
                 inputEl.style.removeProperty('color');
@@ -168,7 +175,6 @@
 
                 const record = this.config?.record || this.rec;
 
-                // LINE LOCK
                 this.insert(this.items.indexOf(subBtn) + 1, Ext.create('Ext.menu.Item', {
                     itemId: 'lineLockBtn',
                     text: 'Line Lock',
@@ -176,7 +182,6 @@
                     handler: function() { arm('LINE_LOCK', record, subBtn); }
                 }));
 
-                // AUTO-SUB
                 if (flexState.isAuthorizedManager) {
                     this.insert(this.items.indexOf(subBtn) + 2, Ext.create('Ext.menu.Item', {
                         itemId: 'autoSubLockBtn',
@@ -192,7 +197,6 @@
 
     function arm(type, record, subBtn) {
         if (type === 'AUTO_SUB' && !flexState.isAuthorizedManager) return;
-
         flexState.type = type;
         flexState.lockedLineId = flexState.lastInterceptedId || (record ? record.get('id') : null);
 
@@ -211,7 +215,6 @@
         }
     }
 
-    // --- 5. LOG-MATCHED DATA ENFORCEMENT ---
     function hookExtAjax() {
         const originalRequest = Ext.Ajax.request;
         Ext.Ajax.request = function(options) {
@@ -222,15 +225,11 @@
 
             if (options.url?.includes('/api/warehouse/scan') && options.jsonData) {
                 const data = options.jsonData;
-
                 if (flexState.mode === 'LOCKED' || flexState.wantsArming) {
-                    
                     if (flexState.type === 'AUTO_SUB') {
                         if (!flexState.isAuthorizedManager) return originalRequest.apply(this, arguments);
-
                         data.scanLineItemId = ""; 
                         data.substituteLineId = flexState.lockedLineId;
-                        
                         if (flexState.wantsArming) {
                             flexState.mode = 'LOCKED';
                             flexState.wantsArming = false;
@@ -251,8 +250,6 @@
         if (MainVC?.prototype.activateLineItemSubstitution) {
             const innerOrig = MainVC.prototype.activateLineItemSubstitution;
             MainVC.prototype.activateLineItemSubstitution = function() {
-                // Hard block: Prevent unauthorized spoofed auto-subs. 
-                // Allow native substitution and authorized auto-subs to pass through perfectly.
                 if (flexState.wantsArming && flexState.type === 'AUTO_SUB' && !flexState.isAuthorizedManager) {
                     return; 
                 }
