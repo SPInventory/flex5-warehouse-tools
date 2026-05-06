@@ -5,8 +5,8 @@
 // @description  Hashed manager gate with pre-execution checks and strict Auto-Sub logic blocking.
 // @author       Ethan Bell / AI Collaborator
 // @match        *://streamlineprod.flexrentalsolutions.com/*
-// @updateURL    https://raw.githubusercontent.com/YOUR-USERNAME/YOUR-REPO/main/flex5-lock.user.js
-// @downloadURL  https://raw.githubusercontent.com/YOUR-USERNAME/YOUR-REPO/main/flex5-lock.user.js
+// @updateURL    https://raw.githubusercontent.com/SPInventory/flex5-warehouse-tools/refs/heads/main/flex5-lock-user.js
+// @downloadURL  https://raw.githubusercontent.com/SPInventory/flex5-warehouse-tools/refs/heads/main/flex5-lock-user.js
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
