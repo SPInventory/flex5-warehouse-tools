@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         Flex5 - The Gated Hash (v7.10)
 // @namespace    http://tampermonkey.net/
-// @version      7.11
+// @version      7.12
 // @description  Hashed manager gate with pre-execution checks and strict Auto-Sub logic blocking.
 // @author       Ethan Bell / AI Collaborator
 // @match        *://streamlineprod.flexrentalsolutions.com/*
-// @updateURL    https://raw.githubusercontent.com/SPInventory/flex5-warehouse-tools/refs/heads/main/flex5-lock-user.js
-// @downloadURL  https://raw.githubusercontent.com/SPInventory/flex5-warehouse-tools/refs/heads/main/flex5-lock-user.js
+// @updateURL    https://raw.githubusercontent.com/SPInventory/flex5-warehouse-tools/refs/heads/main/flex5-lock.user.js
+// @downloadURL  https://raw.githubusercontent.com/SPInventory/flex5-warehouse-tools/refs/heads/main/flex5-lock.user.js
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
