@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Flex5 Scan Assistant (1.0.3)
+// @name         Flex5 Scan Assistant (1.0.6)
 // @namespace    http://tampermonkey.net/
-// @version      1.0.3
+// @version      1.0.6
 // @description  Enhances Flex5 scanning with strict Line Lock and seamless Auto-Sub capabilities. Features UI highlighting, focus trapping, and role-based manager access.
 // @author       Ethan Bell
 // @match        *://streamlineprod.flexrentalsolutions.com/*
@@ -16,9 +16,6 @@
 (function() {
     'use strict';
 
-    // ==========================================
-    //               MANAGER LIST
-    // ==========================================
     const AUTHORIZED_HASHES = [
         "RXRoYW4gQmVsbF9fRkxFWDVfU0VDUkVUX18=",             // Ethan Bell
         "TW9yZ2FuIEhpZ2dpbmJvdGhhbV9fRkxFWDVfU0VDUkVUX18=", // Morgan Higginbotham
@@ -29,34 +26,38 @@
         "SnVzdGluIFJpY2VfX0ZMRVg1X1NFQ1JFVF9f",             // Justin Rice
         "TWl0Y2hlbGwgQmFiZXJfX0ZMRVg1X1NFQ1JFVF9f",         // Mitchell Baber
         "Qm8gTWVyZGFub3ZpY19fRkxFWDVfU0VDUkVUX18="          // Bo Merdanovic
-    ]; 
-    
-    const SECRET_SALT = "__FLEX5_SECRET__"; 
+    ];
+
+    const SECRET_SALT = "__FLEX5_SECRET__";
 
     let flexState = {
         mode: 'OFF',
-        type: null, 
+        type: null,
         lockedLineId: null,
-        targetBarcode: null,
+        lastInterceptedId: null, // Critical for robust locking
         wantsArming: false,
-        lastInterceptedId: null,
         isAuthorizedManager: false
     };
 
-    // --- 1. CSS ---
+    // --- 1. CSS (STRICT CSS TOGGLE) ---
     const style = document.createElement('style');
     style.innerHTML = `
-        .flex-locked-row-pink, .flex-locked-row-pink .x-grid-cell { 
-            background-color: rgb(250, 224, 223) !important; 
+        .flex-locked-row-pink, .flex-locked-row-pink .x-grid-cell {
+            background-color: rgb(250, 224, 223) !important;
         }
-        .flex-locked-row-pink .x-grid-cell-inner { 
-            color: rgb(229, 57, 53) !important; 
+        .flex-locked-row-pink .x-grid-cell-inner {
+            color: rgb(229, 57, 53) !important;
             font-weight: bold !important;
         }
         .flex-search-locked {
+            background-color: rgb(250, 224, 223) !important;
+            color: rgb(229, 57, 53) !important;
+            font-weight: bold !important;
+            text-align: center !important;
+            border: 1px solid rgb(229, 57, 53) !important;
             cursor: pointer !important;
+            pointer-events: auto !important;
         }
-        /* Hide triggers (X and Magnifying Glass) when locked */
         .flex-search-locked ~ .x-form-trigger-wrap {
             display: none !important;
         }
@@ -66,7 +67,18 @@
     `;
     document.head.appendChild(style);
 
-    // --- 2. BOOT ---
+    // --- 2. GLOBAL EVENT DELEGATION (CLEAN UNLOCK) ---
+    window.addEventListener('mousedown', function(e) {
+        if (flexState.mode === 'LOCKED') {
+            if (e.target.classList.contains('flex-search-locked')) {
+                e.preventDefault();
+                e.stopPropagation();
+                cancelLock();
+            }
+        }
+    }, true);
+
+    // --- 3. BOOT ---
     let initTimer = setInterval(() => {
         verifyManagerStatus();
         if (typeof Ext !== 'undefined' && Ext.ClassManager && Ext.ClassManager.get('ExtFlex.warehouse.equipmentlist.EquipmentListScanVC')) {
@@ -105,67 +117,49 @@
         return null;
     }
 
-    // --- 3. UI WATCHDOG (v1.0.3: RE-ATTACH LISTENERS) ---
+    // --- 4. UI WATCHDOG ---
     function startGlobalWatchdog() {
         setInterval(() => {
-            const inputEl = getActiveSearchBar(); 
-            
+            const inputEl = getActiveSearchBar();
+
             if (flexState.mode === 'LOCKED') {
                 const row = document.querySelector(`[data-recordid="${flexState.lockedLineId}"]`);
                 if (row && !row.classList.contains('flex-locked-row-pink')) {
                     row.classList.add('flex-locked-row-pink');
                 }
 
-                if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
-                    document.activeElement.blur();
-                    window.focus();
-                }
-
                 if (inputEl) {
                     inputEl.readOnly = true;
-                    inputEl.value = flexState.type === 'LINE_LOCK' ? "LINE LOCK ACTIVE" : "AUTO-SUB ACTIVE";
-                    
                     if (!inputEl.classList.contains('flex-search-locked')) {
                         inputEl.classList.add('flex-search-locked');
                     }
-
-                    inputEl.style.setProperty('background-color', 'rgb(250, 224, 223)', 'important');
-                    inputEl.style.setProperty('color', 'rgb(229, 57, 53)', 'important');
-                    inputEl.style.setProperty('font-weight', 'bold', 'important');
-                    inputEl.style.setProperty('text-align', 'center', 'important');
-                    inputEl.style.setProperty('border', '1px solid rgb(229, 57, 53)', 'important');
-
-                    // Always ensure click listener is active
-                    inputEl.onclick = (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        cancelLock();
-                    };
+                    inputEl.value = flexState.type === 'LINE_LOCK' ? "LINE LOCK ACTIVE" : "AUTO-SUB ACTIVE";
                 }
-            } else if (inputEl && inputEl.classList.contains('flex-search-locked')) {
-                inputEl.readOnly = false;
-                inputEl.classList.remove('flex-search-locked');
-                inputEl.value = "";
-                inputEl.style.removeProperty('background-color');
-                inputEl.style.removeProperty('color');
-                inputEl.style.removeProperty('font-weight');
-                inputEl.style.removeProperty('text-align');
-                inputEl.style.removeProperty('border');
-                inputEl.placeholder = "Search...";
-                inputEl.onclick = null;
-                document.querySelectorAll('.flex-locked-row-pink').forEach(r => r.classList.remove('flex-locked-row-pink'));
+
+                if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+                    document.activeElement.blur();
+                }
+            } else {
+                // AGGRESSIVE CLEANUP
+                if (inputEl && inputEl.classList.contains('flex-search-locked')) {
+                    inputEl.readOnly = false;
+                    inputEl.classList.remove('flex-search-locked');
+                    inputEl.value = "";
+                }
+                const lockedRows = document.querySelectorAll('.flex-locked-row-pink');
+                if (lockedRows.length > 0) {
+                    lockedRows.forEach(r => r.classList.remove('flex-locked-row-pink'));
+                }
             }
         }, 200);
     }
 
     function cancelLock() {
-        // Reset state first so the UI clears immediately
         flexState.mode = 'OFF';
         flexState.type = null;
-        flexState.wantsArming = false;
         flexState.lockedLineId = null;
+        flexState.wantsArming = false;
 
-        // Then try to click the native cancel button if it's there (Auto-Sub only)
         try {
             const nativeCancel = document.querySelector('.x-btn-icon-el-default-toolbar-small.fa-ban');
             if (nativeCancel) {
@@ -174,7 +168,7 @@
         } catch (err) {}
     }
 
-    // --- 4. MENU INTEGRATION ---
+    // --- 5. CORE LOGIC (RESTORED LOCK TRACKING) ---
     function hijackMenu() {
         const origAdd = Ext.menu.Menu.prototype.add;
         Ext.menu.Menu.prototype.add = function() {
@@ -182,21 +176,16 @@
             try {
                 const subBtn = this.down('menuitem[text*="Substitute Line"]');
                 if (!subBtn || this.down('[itemId=lineLockBtn]')) return addedItems;
-
                 const record = this.config?.record || this.rec;
 
                 this.insert(this.items.indexOf(subBtn) + 1, Ext.create('Ext.menu.Item', {
-                    itemId: 'lineLockBtn',
-                    text: 'Line Lock',
-                    iconCls: 'x-fa fa-lock',
+                    itemId: 'lineLockBtn', text: 'Line Lock', iconCls: 'x-fa fa-lock',
                     handler: function() { arm('LINE_LOCK', record, subBtn); }
                 }));
 
                 if (flexState.isAuthorizedManager) {
                     this.insert(this.items.indexOf(subBtn) + 2, Ext.create('Ext.menu.Item', {
-                        itemId: 'autoSubLockBtn',
-                        text: 'Auto-Sub',
-                        iconCls: 'x-fa fa-retweet',
+                        itemId: 'autoSubLockBtn', text: 'Auto-Sub', iconCls: 'x-fa fa-retweet',
                         handler: function() { arm('AUTO_SUB', record, subBtn); }
                     }));
                 }
@@ -207,20 +196,15 @@
 
     function arm(type, record, subBtn) {
         if (type === 'AUTO_SUB' && !flexState.isAuthorizedManager) return;
-        flexState.type = type;
-        flexState.lockedLineId = flexState.lastInterceptedId || (record ? record.get('id') : null);
 
-        if (record) {
-            const data = record.get('inventoryModelData') || record.getData();
-            flexState.targetBarcode = data.barcode || "";
-        }
+        flexState.type = type;
+        // Use the intercepted ID if available, otherwise fallback to the record ID
+        flexState.lockedLineId = flexState.lastInterceptedId || (record ? record.get('id') : null);
 
         if (type === 'AUTO_SUB') {
             flexState.wantsArming = true;
             if (subBtn.handler) subBtn.handler.call(subBtn.scope || subBtn, subBtn);
         } else {
-            if (document.activeElement) document.activeElement.blur();
-            window.focus();
             flexState.mode = 'LOCKED';
         }
     }
@@ -228,6 +212,7 @@
     function hookExtAjax() {
         const originalRequest = Ext.Ajax.request;
         Ext.Ajax.request = function(options) {
+            // RESTORED: Capture the exact Line ID when the gear menu is opened
             if (options.url?.includes('/additional-action-info')) {
                 const match = options.url.match(/\/line-item\/([a-f0-9-]+)\/additional-action-info/);
                 if (match && match[1]) flexState.lastInterceptedId = match[1];
@@ -238,14 +223,12 @@
                 if (flexState.mode === 'LOCKED' || flexState.wantsArming) {
                     if (flexState.type === 'AUTO_SUB') {
                         if (!flexState.isAuthorizedManager) return originalRequest.apply(this, arguments);
-                        data.scanLineItemId = ""; 
+                        data.scanLineItemId = "";
                         data.substituteLineId = flexState.lockedLineId;
-                        if (flexState.wantsArming) {
-                            flexState.mode = 'LOCKED';
-                            flexState.wantsArming = false;
-                        }
-                    } 
+                        if (flexState.wantsArming) { flexState.mode = 'LOCKED'; flexState.wantsArming = false; }
+                    }
                     else if (flexState.type === 'LINE_LOCK') {
+                        // FORCE LOCK TO LINE
                         data.scanLineItemId = flexState.lockedLineId;
                         delete data.substituteLineId;
                     }
@@ -260,9 +243,7 @@
         if (MainVC?.prototype.activateLineItemSubstitution) {
             const innerOrig = MainVC.prototype.activateLineItemSubstitution;
             MainVC.prototype.activateLineItemSubstitution = function() {
-                if (flexState.wantsArming && flexState.type === 'AUTO_SUB' && !flexState.isAuthorizedManager) {
-                    return; 
-                }
+                if (flexState.wantsArming && flexState.type === 'AUTO_SUB' && !flexState.isAuthorizedManager) return;
                 return innerOrig.apply(this, arguments);
             };
         }
