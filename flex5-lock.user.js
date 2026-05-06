@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      1.0.3
 // @description  Enhances Flex5 scanning with strict Line Lock and seamless Auto-Sub capabilities. Features UI highlighting, focus trapping, and role-based manager access.
-// @author       Ethan Bell / AI Collaborator
+// @author       Ethan Bell
 // @match        *://streamlineprod.flexrentalsolutions.com/*
 // @updateURL    https://raw.githubusercontent.com/SPInventory/flex5-warehouse-tools/refs/heads/main/flex5-lock.user.js
 // @downloadURL  https://raw.githubusercontent.com/SPInventory/flex5-warehouse-tools/refs/heads/main/flex5-lock.user.js
@@ -17,7 +17,7 @@
     'use strict';
 
     // ==========================================
-    // 🔒 MANAGER LIST
+    //               MANAGER LIST
     // ==========================================
     const AUTHORIZED_HASHES = [
         "RXRoYW4gQmVsbF9fRkxFWDVfU0VDUkVUX18=",             // Ethan Bell
