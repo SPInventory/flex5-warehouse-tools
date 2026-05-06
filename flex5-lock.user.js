@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Flex5 Scan Assistant (1.0.2)
+// @name         Flex5 Scan Assistant (1.0.3)
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.0.3
 // @description  Enhances Flex5 scanning with strict Line Lock and seamless Auto-Sub capabilities. Features UI highlighting, focus trapping, and role-based manager access.
-// @author       Ethan Bell
+// @author       Ethan Bell / AI Collaborator
 // @match        *://streamlineprod.flexrentalsolutions.com/*
 // @updateURL    https://raw.githubusercontent.com/SPInventory/flex5-warehouse-tools/refs/heads/main/flex5-lock.user.js
 // @downloadURL  https://raw.githubusercontent.com/SPInventory/flex5-warehouse-tools/refs/heads/main/flex5-lock.user.js
@@ -18,7 +18,6 @@
 
     // ==========================================
     // 🔒 MANAGER LIST
-    // Base64 + Salt hashed names. Do not edit directly.
     // ==========================================
     const AUTHORIZED_HASHES = [
         "RXRoYW4gQmVsbF9fRkxFWDVfU0VDUkVUX18=",             // Ethan Bell
@@ -44,7 +43,7 @@
         isAuthorizedManager: false
     };
 
-    // --- 1. CSS FOR FEEDBACK & CLEAN UI ---
+    // --- 1. CSS ---
     const style = document.createElement('style');
     style.innerHTML = `
         .flex-locked-row-pink, .flex-locked-row-pink .x-grid-cell { 
@@ -54,18 +53,20 @@
             color: rgb(229, 57, 53) !important; 
             font-weight: bold !important;
         }
-        /* Hide the Clear "X" and magnifying glass when locked */
+        .flex-search-locked {
+            cursor: pointer !important;
+        }
+        /* Hide triggers (X and Magnifying Glass) when locked */
         .flex-search-locked ~ .x-form-trigger-wrap {
             display: none !important;
         }
-        /* Prevent browser-native search clear buttons */
         .flex-search-locked::-webkit-search-cancel-button {
             -webkit-appearance: none;
         }
     `;
     document.head.appendChild(style);
 
-    // --- 2. BOOT SEQUENCE ---
+    // --- 2. BOOT ---
     let initTimer = setInterval(() => {
         verifyManagerStatus();
         if (typeof Ext !== 'undefined' && Ext.ClassManager && Ext.ClassManager.get('ExtFlex.warehouse.equipmentlist.EquipmentListScanVC')) {
@@ -104,7 +105,7 @@
         return null;
     }
 
-    // --- 3. UI WATCHDOG ---
+    // --- 3. UI WATCHDOG (v1.0.3: RE-ATTACH LISTENERS) ---
     function startGlobalWatchdog() {
         setInterval(() => {
             const inputEl = getActiveSearchBar(); 
@@ -120,20 +121,24 @@
                     window.focus();
                 }
 
-                if (inputEl && !inputEl.classList.contains('flex-search-locked')) {
+                if (inputEl) {
                     inputEl.readOnly = true;
-                    inputEl.classList.add('flex-search-locked'); // Triggers CSS to hide the "X"
                     inputEl.value = flexState.type === 'LINE_LOCK' ? "LINE LOCK ACTIVE" : "AUTO-SUB ACTIVE";
                     
+                    if (!inputEl.classList.contains('flex-search-locked')) {
+                        inputEl.classList.add('flex-search-locked');
+                    }
+
                     inputEl.style.setProperty('background-color', 'rgb(250, 224, 223)', 'important');
                     inputEl.style.setProperty('color', 'rgb(229, 57, 53)', 'important');
                     inputEl.style.setProperty('font-weight', 'bold', 'important');
                     inputEl.style.setProperty('text-align', 'center', 'important');
-                    inputEl.style.setProperty('cursor', 'pointer', 'important');
                     inputEl.style.setProperty('border', '1px solid rgb(229, 57, 53)', 'important');
-                    
+
+                    // Always ensure click listener is active
                     inputEl.onclick = (e) => {
                         e.preventDefault();
+                        e.stopPropagation();
                         cancelLock();
                     };
                 }
@@ -145,9 +150,7 @@
                 inputEl.style.removeProperty('color');
                 inputEl.style.removeProperty('font-weight');
                 inputEl.style.removeProperty('text-align');
-                inputEl.style.removeProperty('cursor');
                 inputEl.style.removeProperty('border');
-                
                 inputEl.placeholder = "Search...";
                 inputEl.onclick = null;
                 document.querySelectorAll('.flex-locked-row-pink').forEach(r => r.classList.remove('flex-locked-row-pink'));
@@ -156,12 +159,19 @@
     }
 
     function cancelLock() {
+        // Reset state first so the UI clears immediately
         flexState.mode = 'OFF';
         flexState.type = null;
         flexState.wantsArming = false;
         flexState.lockedLineId = null;
-        const nativeCancel = document.querySelector('.x-btn-icon-el-default-toolbar-small.fa-ban');
-        if (nativeCancel) nativeCancel.closest('.x-btn').click();
+
+        // Then try to click the native cancel button if it's there (Auto-Sub only)
+        try {
+            const nativeCancel = document.querySelector('.x-btn-icon-el-default-toolbar-small.fa-ban');
+            if (nativeCancel) {
+                nativeCancel.closest('.x-btn').click();
+            }
+        } catch (err) {}
     }
 
     // --- 4. MENU INTEGRATION ---
