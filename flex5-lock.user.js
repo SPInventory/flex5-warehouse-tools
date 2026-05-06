@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Flex5 Scan Assistant (1.0.0)
+// @name         Flex5 Scan Assistant (1.0.1)
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Enhances Flex5 scanning with strict Line Lock and seamless Auto-Sub capabilities. Features UI highlighting, focus trapping, and role-based manager access.
 // @author       Ethan Bell / AI Collaborator
 // @match        *://streamlineprod.flexrentalsolutions.com/*
@@ -17,7 +17,7 @@
     'use strict';
 
     // ==========================================
-    //                MANAGER LIST
+    // 🔒 MANAGER LIST
     // Base64 + Salt hashed names. Do not edit directly.
     // ==========================================
     const AUTHORIZED_HASHES = [
@@ -30,13 +30,13 @@
         "SnVzdGluIFJpY2VfX0ZMRVg1X1NFQ1JFVF9f",             // Justin Rice
         "TWl0Y2hlbGwgQmFiZXJfX0ZMRVg1X1NFQ1JFVF9f",         // Mitchell Baber
         "Qm8gTWVyZGFub3ZpY19fRkxFWDVfU0VDUkVUX18="          // Bo Merdanovic
-    ];
-
-    const SECRET_SALT = "__FLEX5_SECRET__";
+    ]; 
+    
+    const SECRET_SALT = "__FLEX5_SECRET__"; 
 
     let flexState = {
         mode: 'OFF',
-        type: null,
+        type: null, 
         lockedLineId: null,
         targetBarcode: null,
         wantsArming: false,
@@ -47,11 +47,11 @@
     // --- 1. CSS FOR FEEDBACK ---
     const style = document.createElement('style');
     style.innerHTML = `
-        .flex-locked-row-pink, .flex-locked-row-pink .x-grid-cell {
-            background-color: rgb(250, 224, 223) !important;
+        .flex-locked-row-pink, .flex-locked-row-pink .x-grid-cell { 
+            background-color: rgb(250, 224, 223) !important; 
         }
-        .flex-locked-row-pink .x-grid-cell-inner {
-            color: rgb(229, 57, 53) !important;
+        .flex-locked-row-pink .x-grid-cell-inner { 
+            color: rgb(229, 57, 53) !important; 
             font-weight: bold !important;
         }
     `;
@@ -59,7 +59,6 @@
 
     // --- 2. BOOT SEQUENCE & SECURITY CHECK ---
     let initTimer = setInterval(() => {
-        // Run security scan constantly until we find the user's name on boot
         verifyManagerStatus();
 
         if (typeof Ext !== 'undefined' && Ext.ClassManager && Ext.ClassManager.get('ExtFlex.warehouse.equipmentlist.EquipmentListScanVC')) {
@@ -72,14 +71,14 @@
     }, 500);
 
     function verifyManagerStatus() {
-        if (flexState.isAuthorizedManager) return; // Already confirmed
+        if (flexState.isAuthorizedManager) return;
 
         try {
             const allTextElements = document.querySelectorAll('.x-btn-inner, .x-component');
             for (let el of allTextElements) {
                 const rawName = el.innerText.trim();
                 if (!rawName) continue;
-
+                
                 const encodedName = btoa(unescape(encodeURIComponent(rawName + SECRET_SALT)));
                 if (AUTHORIZED_HASHES.includes(encodedName)) {
                     flexState.isAuthorizedManager = true;
@@ -103,8 +102,8 @@
     // --- 3. UI WATCHDOG ---
     function startGlobalWatchdog() {
         setInterval(() => {
-            const inputEl = getActiveSearchBar();
-
+            const inputEl = getActiveSearchBar(); 
+            
             if (flexState.mode === 'LOCKED') {
                 const row = document.querySelector(`[data-recordid="${flexState.lockedLineId}"]`);
                 if (row && !row.classList.contains('flex-locked-row-pink')) {
@@ -119,14 +118,14 @@
                 if (inputEl && inputEl.readOnly !== true) {
                     inputEl.readOnly = true;
                     inputEl.value = flexState.type === 'LINE_LOCK' ? "LINE LOCK ACTIVE" : "AUTO-SUB ACTIVE";
-
+                    
                     inputEl.style.setProperty('background-color', 'rgb(250, 224, 223)', 'important');
                     inputEl.style.setProperty('color', 'rgb(229, 57, 53)', 'important');
                     inputEl.style.setProperty('font-weight', 'bold', 'important');
                     inputEl.style.setProperty('text-align', 'center', 'important');
                     inputEl.style.setProperty('cursor', 'pointer', 'important');
                     inputEl.style.setProperty('border', '1px solid rgb(229, 57, 53)', 'important');
-
+                    
                     inputEl.onclick = (e) => {
                         e.preventDefault();
                         cancelLock();
@@ -141,7 +140,7 @@
                 inputEl.style.removeProperty('text-align');
                 inputEl.style.removeProperty('cursor');
                 inputEl.style.removeProperty('border');
-
+                
                 inputEl.placeholder = "Search...";
                 inputEl.onclick = null;
                 document.querySelectorAll('.flex-locked-row-pink').forEach(r => r.classList.remove('flex-locked-row-pink'));
@@ -158,7 +157,7 @@
         if (nativeCancel) nativeCancel.closest('.x-btn').click();
     }
 
-    // --- 4. MENU INTEGRATION (GATED) ---
+    // --- 4. MENU INTEGRATION ---
     function hijackMenu() {
         const origAdd = Ext.menu.Menu.prototype.add;
         Ext.menu.Menu.prototype.add = function() {
@@ -169,7 +168,7 @@
 
                 const record = this.config?.record || this.rec;
 
-                // LINE LOCK (Always visible)
+                // LINE LOCK
                 this.insert(this.items.indexOf(subBtn) + 1, Ext.create('Ext.menu.Item', {
                     itemId: 'lineLockBtn',
                     text: 'Line Lock',
@@ -177,7 +176,7 @@
                     handler: function() { arm('LINE_LOCK', record, subBtn); }
                 }));
 
-                // AUTO-SUB (Restricted to Managers)
+                // AUTO-SUB
                 if (flexState.isAuthorizedManager) {
                     this.insert(this.items.indexOf(subBtn) + 2, Ext.create('Ext.menu.Item', {
                         itemId: 'autoSubLockBtn',
@@ -192,7 +191,6 @@
     }
 
     function arm(type, record, subBtn) {
-        // Hard block: if someone spoofs the click event
         if (type === 'AUTO_SUB' && !flexState.isAuthorizedManager) return;
 
         flexState.type = type;
@@ -226,19 +224,18 @@
                 const data = options.jsonData;
 
                 if (flexState.mode === 'LOCKED' || flexState.wantsArming) {
-
+                    
                     if (flexState.type === 'AUTO_SUB') {
-                        // Hard block: Disable logic completely for non-managers
                         if (!flexState.isAuthorizedManager) return originalRequest.apply(this, arguments);
 
-                        data.scanLineItemId = "";
+                        data.scanLineItemId = ""; 
                         data.substituteLineId = flexState.lockedLineId;
-
+                        
                         if (flexState.wantsArming) {
                             flexState.mode = 'LOCKED';
                             flexState.wantsArming = false;
                         }
-                    }
+                    } 
                     else if (flexState.type === 'LINE_LOCK') {
                         data.scanLineItemId = flexState.lockedLineId;
                         delete data.substituteLineId;
@@ -254,10 +251,12 @@
         if (MainVC?.prototype.activateLineItemSubstitution) {
             const innerOrig = MainVC.prototype.activateLineItemSubstitution;
             MainVC.prototype.activateLineItemSubstitution = function() {
-                // Hard block: Native sub intercept
-                if (flexState.wantsArming && flexState.type === 'AUTO_SUB' && flexState.isAuthorizedManager) {
-                    return innerOrig.apply(this, arguments);
+                // Hard block: Prevent unauthorized spoofed auto-subs. 
+                // Allow native substitution and authorized auto-subs to pass through perfectly.
+                if (flexState.wantsArming && flexState.type === 'AUTO_SUB' && !flexState.isAuthorizedManager) {
+                    return; 
                 }
+                return innerOrig.apply(this, arguments);
             };
         }
     }
