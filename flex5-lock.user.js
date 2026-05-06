@@ -17,7 +17,7 @@
     'use strict';
 
     // ==========================================
-    // 🔒 ENCRYPTED VIP MANAGER LIST
+    //                MANAGER LIST
     // Base64 + Salt hashed names. Do not edit directly.
     // ==========================================
     const AUTHORIZED_HASHES = [
